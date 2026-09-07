@@ -20,9 +20,9 @@ B0   = 1e3*E0.B_eff_T;       % T -> mT
 B150 = 1e3*E150.B_eff_T;     % T -> mT
 
 % Focus windows (ps)
-tZoomJ0   = 0.50;
-tZoomJ150 = 2.00;
-tZoomM    = 2.00;
+tZoomJ0   = 0.35;
+tZoomJ150 = 1.50;
+tZoomM    = 1.50;
 
 %% FIGURE 1: J0=0 all effective-field components, tighter early-time zoom
 figure('Color','w','Position',[180 100 1000 650]); hold on;

@@ -2,19 +2,62 @@
 % Loads the latest half-filling run and creates focused plots.
 % Same data/units throughout; the By/Bz figure only changes axis limits.
 
-downloadsDir = fullfile(getenv('USERPROFILE'),'Downloads');
+downloadsDir = get_downloads_directory();
 
 files = dir(fullfile(downloadsDir,'**', ...
     'HALF_FILLING_N14_NO_SOC_J0_COMPARISON_COMPLETE.mat'));
+% A directory may have the same name as a result file.
+files = files(~[files.isdir]);
+files = files(arrayfun(@(f) isfolder(f.folder),files));
 
-assert(~isempty(files),'No HALF_FILLING_N14 result MAT file was found.');
+if isempty(files)
+    error('half_filling:NoResultFiles', ...
+        'No HALF_FILLING_N14_NO_SOC_J0_COMPARISON_COMPLETE.mat files found under "%s".', ...
+        downloadsDir);
+end
 
+% Keep the original selection rule: newest result by modification time.
 [~,idx] = max([files.datenum]);
-S = load(fullfile(files(idx).folder,files(idx).name),'runs');
-runs = S.runs;
+resultFile = fullfile(files(idx).folder,files(idx).name);
+try
+    S = load(resultFile,'runs');
+catch cause
+    error('half_filling:LoadFailed', ...
+        'Could not load result MAT file "%s": %s',resultFile,cause.message);
+end
 
-E0   = runs{find(cellfun(@(x) x.J0_meV==0,   runs),1)};
-E150 = runs{find(cellfun(@(x) x.J0_meV==150, runs),1)};
+if ~isfield(S,'runs')
+    error('half_filling:MissingRuns', ...
+        'Result MAT file "%s" does not contain the variable "runs".',resultFile);
+end
+runs = S.runs;
+if ~iscell(runs) || isempty(runs) || ~isvector(runs)
+    error('half_filling:InvalidRuns', ...
+        '"runs" in "%s" must be a nonempty cell vector of scalar run structures.', ...
+        resultFile);
+end
+for irun = 1:numel(runs)
+    E = runs{irun};
+    if ~isstruct(E) || ~isscalar(E) || ~isfield(E,'J0_meV') || ...
+            ~isnumeric(E.J0_meV) || ~isreal(E.J0_meV) || ...
+            ~isscalar(E.J0_meV) || ~isfinite(E.J0_meV)
+        error('half_filling:InvalidRun', ...
+            'runs{%d} in "%s" must be a scalar structure with a finite numeric scalar J0_meV.', ...
+            irun,resultFile);
+    end
+end
+
+idxJ0 = find(cellfun(@(x) x.J0_meV==0,runs),1);
+idxJ150 = find(cellfun(@(x) x.J0_meV==150,runs),1);
+if isempty(idxJ0) || isempty(idxJ150)
+    error('half_filling:MissingRequiredRuns', ...
+        'Result MAT file "%s" must contain both J0=0 and J0=150 meV runs (found J0=0: %d, J0=150: %d).', ...
+        resultFile,~isempty(idxJ0),~isempty(idxJ150));
+end
+E0 = runs{idxJ0};
+E150 = runs{idxJ150};
+validate_plot_run(E0,resultFile);
+validate_plot_run(E150,resultFile);
 
 B0   = 1e3*E0.B_eff_T;       % T -> mT
 B150 = 1e3*E150.B_eff_T;     % T -> mT
@@ -115,3 +158,47 @@ end
 
 xlabel('time [ps]');
 sgtitle('Half filling N=14 | SOC=0 | early-time moment response');
+
+
+function downloadsDir = get_downloads_directory()
+
+if ispc
+    homeDir = getenv('USERPROFILE');
+else
+    homeDir = getenv('HOME');
+end
+if isempty(homeDir)
+    error('half_filling:MissingHomeDirectory', ...
+        'Cannot locate Downloads: USERPROFILE (Windows) or HOME (Linux) is not set.');
+end
+downloadsDir = fullfile(homeDir,'Downloads');
+if ~isfolder(downloadsDir)
+    error('half_filling:MissingDownloadsDirectory', ...
+        'Downloads directory does not exist: "%s".',downloadsDir);
+end
+
+end
+
+
+function validate_plot_run(E,resultFile)
+
+if ~all(isfield(E,{'t_fs','B_eff_T','M'}))
+    error('half_filling:MissingPlotFields', ...
+        'J0=%g meV run in "%s" must contain t_fs, B_eff_T and M.', ...
+        E.J0_meV,resultFile);
+end
+if ~isnumeric(E.t_fs) || ~isreal(E.t_fs) || ...
+        isempty(E.t_fs) || ~isvector(E.t_fs) || any(~isfinite(E.t_fs(:)))
+    error('half_filling:InvalidTimeData', ...
+        't_fs for J0=%g meV in "%s" must be a nonempty finite numeric time vector.', ...
+        E.J0_meV,resultFile);
+end
+nTimes = numel(E.t_fs);
+if ~isnumeric(E.B_eff_T) || ~isequal(size(E.B_eff_T),[nTimes 3]) || ...
+        ~isnumeric(E.M) || ~isequal(size(E.M),[nTimes 3])
+    error('half_filling:InvalidPlotData', ...
+        'B_eff_T and M for J0=%g meV in "%s" must be numeric N-by-3 matrices matching t_fs.', ...
+        E.J0_meV,resultFile);
+end
+
+end
